@@ -5,7 +5,7 @@ from torch.nn import Linear
 from torch import tensor
 from torch.optim import Adam
 from torch.optim import SGD
-from math import ceil
+from math import ceil, isnan
 from torch.nn import Linear
 from torch.distributions import categorical
 from torch.distributions import Bernoulli
@@ -29,9 +29,9 @@ from torch_scatter import scatter_min, scatter_max, scatter_add, scatter_mean
 from torch import autograd
 from torch_geometric.utils import softmax, add_self_loops, remove_self_loops, segregate_self_loops, remove_isolated_nodes, contains_isolated_nodes, add_remaining_self_loops, dropout_adj
 from modules_and_utils import get_diracs, get_mask, propagate
-from modules_and_utils import derandomize_cut, GATAConv, get_diracs
+from torch_geometric.nn.norm.graph_size_norm import GraphSizeNorm
+from torch.distributions import Categorical
 
-#from torch_geometric.nn.norm.graph_size_norm import GraphSizeNorm
 ###########
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -240,6 +240,8 @@ class cut_MPNN(torch.nn.Module):
         retdict["xinit"] = [xinit,"hist"] #layer input diracs
         retdict["xpostlin1"] = [xpostlin1.mean(1),"hist"] #after first linear layer
         retdict["xprethresh"] = [xprethresh.mean(1),"hist"] #pre thresholding activations 195 x 1
+        retdict["lossvol"] = [lossvol.mean(),"sequence"] #volume constraint
+        retdict["losscard"] = [losscard.mean(),"sequence"] #cardinality constraint
         retdict["loss"] = [loss.mean().squeeze(),"sequence"] #final loss
 
         return retdict
@@ -448,7 +450,7 @@ class clique_MPNN(torch.nn.Module):
 
 
 
-    def forward(self, data, edge_dropout = None, penalty_coefficient = 0.25):
+    def forward(self, data, edge_dropout = None, penalty_coefficient = 0.25, tau=1):
         x = data.x
         edge_index = data.edge_index
         batch = data.batch
@@ -511,7 +513,6 @@ class clique_MPNN(torch.nn.Module):
             batch_graph = (batch==graph)
             pairwise_prodsums[graph] = (torch.conv1d(probs[batch_graph].unsqueeze(-1), probs[batch_graph].unsqueeze(-1))).sum()/2
         
-        
         ###calculate loss terms
         self_sums = scatter_add((probs*probs), batch, 0, dim_size = num_graphs)
         expected_weight_G = scatter_add(probs[no_loop_row]*probs[no_loop_col], batch[no_loop_row], 0, dim_size = num_graphs)/2.
@@ -520,10 +521,24 @@ class clique_MPNN(torch.nn.Module):
         
         ###calculate loss
         expected_loss = (penalty_coefficient)*expected_distance*0.5 - 0.5*expected_weight_G  
-        
 
-        loss = expected_loss
+        # loss = expected_loss +  tau * (torch.randn_like(probs) * probs).sum()
+        entropy = (probs * torch.log(torch.clamp(probs, min=1e-7, max=1-1e-7)) + (1 - probs) * torch.log(1 - torch.clamp(probs, min=1e-7, max=1-1e-7))).sum()
+        if isnan(entropy):
+            breakpoint()
+        loss = expected_loss + tau * entropy
 
+        if loss < -1e6:
+            print("loss")
+            print(loss)
+            print("expected loss")
+            print(expected_loss)
+            print('entropy')
+            print(entropy)
+            print('tau')
+            print(tau)
+            print('probs')
+            print(probs)
 
         retdict = {}
         
