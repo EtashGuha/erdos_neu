@@ -4,6 +4,8 @@ from torch.nn import Linear
 from itertools import product
 import time
 from tqdm import tqdm
+import os
+import math
 from torch import tensor
 from torch.optim import Adam
 from torch.optim import SGD
@@ -74,7 +76,7 @@ from modules_and_utils import decode_clique_final, decode_clique_final_speed
 from torch_geometric.utils.convert import from_networkx
 import pickle
 from hanging_threads import start_monitoring
-start_monitoring(seconds_frozen=10, test_interval=100)
+# start_monitoring(seconds_frozen=10, test_interval=100)
 # ## Set up data
 
 # In[10]:
@@ -173,7 +175,7 @@ def run_training(dataset, taus):
     rand_seeds = [66]
     widths = [64]
 
-    epochs = 100
+    epochs = 200
     net.train()
     retdict = {}
     edge_drop_p = 0.0
@@ -201,7 +203,6 @@ def run_training(dataset, taus):
         net.to(device).reset_parameters()
         optimizer = Adam(net.parameters(), lr=learning_rate, weight_decay=0.00000)
 
-        taus = []
         losses = []
         epochs_list = []
         for epoch in tqdm(range(epochs)):
@@ -222,30 +223,23 @@ def run_training(dataset, taus):
 
             #show currrent epoch and GPU utilizations9s
             # print('Epoch: ', epoch)
-            GPUtil.showUtilization()
+            # GPUtil.showUtilization()
 
 
 
             #print("here3")
-
-            taus.append(5/(epoch + 1))
             net.train()
             total_loss = 0
             for data in train_loader:
-                print("start")
                 count += 1 
                 optimizer.zero_grad(), 
                 data = data.to(device)
-                try:
-                    data_prime = get_diracs(data, 1, sparse = True, effective_volume_range=0.15, receptive_field = receptive_field)
-                except:
-                    continue
+                data_prime = get_diracs(data, 1, sparse = True, effective_volume_range=0.15, receptive_field = receptive_field)
+                
                 data = data.to('cpu')
                 data_prime = data_prime.to(device)
 
-                print("before training")
                 retdict = net(data_prime, None, penalty_coeff, tau=taus[epoch])
-                print("after training")
                 
                 for key,val in retdict.items():
                     if "sequence" in val[1]:
@@ -255,36 +249,25 @@ def run_training(dataset, taus):
                             totalretdict[key] = [val[0].item(),val[1]]
 
                 if epoch > 2:
-                        print("Before loss")
                         total_loss += retdict["loss"][0].item()
                         retdict["loss"][0].backward()
-                        print("after backwards")
                         #reporter.report()
                         
                         torch.nn.utils.clip_grad_norm_(net.parameters(),1)
                         optimizer.step()
-                        print("after optim step")
                         del(retdict)
-                print("end")
 
             if epoch > -1:        
-                print("Before deleting")
                 for key,val in totalretdict.items():
                     if "sequence" in val[1]:
                         val[0] = val[0]/(len(train_loader.dataset)/batch_size)
+                
                 del data_prime
-                print("after deleting")
-            epochs_list.append(epoch)
-            losses.append(total_loss)
+            losses.append(total_loss/len(train_loader))
     # ## Get ground truths from Gurobi
 
-    print("done")
     # In[16]:
 
-    import matplotlib.pyplot as plt
-
-    plt.scatter(epochs_list, losses)
-    plt.savefig("epoch_by_loss_average.png")
     test_data_clique = []
 
     for data in testdata:
@@ -412,7 +395,7 @@ def run_training(dataset, taus):
     tests = test_data_clique
     ratios = [gnn_nodes[i]/tests[i].clique_number for i in range(len(tests))]
     print(f"Mean ratio: {(np.array(ratios)).mean()} +/-  {(np.array(ratios)).std()}")
-    return (np.array(ratios)).mean(), (np.array(ratios)).std()
+    return (np.array(ratios)).mean(), (np.array(ratios)).std(), losses, net
 
 def get_data():
     datasets = ["TWITTER_SNAP", "COLLAB", "IMDB-BINARY"]
@@ -433,31 +416,56 @@ def get_data():
         #stored_dataset = open('datasets/IMDB_BINARY.p', 'rb')
         dataset = TUDataset(root='/tmp/'+dataset_name, name=dataset_name)
     elif dataset_name == "RB-MODEL":
-        f = open("/nethome/eguha3/FGOPT/gdrive/maxclique-xu-n_300_400/train-0-1000.pkl", "rb")
+        f = open("/nethome/eguha3/FGOPT/gdrive/maxclique-xu-n_800_1200/train-0-1000.pkl", "rb")
         dataset = []
         idx = 0
         while True:
+            idx += 1
+            print(idx)
             try:
                 graph, true_sol = pickle.load(f)
-                dataset.append(from_networkx(graph))
-                print(graph.number_of_nodes())
+                dataset.append(from_networkx(nx.complement(graph)))
             except EOFError:
                 break
+    print(len(dataset))
     return dataset
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     list_of_taus = []
     dataset = get_data()
-
+    num_epochs = 200
+    name = "entropy_alpha_800_1200_200e_is"
     final_solution = []
-
-    for initial_tau in tqdm(np.linspace(1, 10, 5)):
-        taus = []
-        for epoch in range(1, 95):
-            taus.append(initial_tau/(epoch))
+    if os.path.exists("{}.pkl".format(name)):
+        with open("{}.pkl".format(name), "rb") as f:
+            final_solution = pickle.load(f)
+    initial_taus_betas = [(50000, 1e-1)]
+    all_best_mus = []
+    for initial_tau, beta in initial_taus_betas:
+        best_mu = -1
+        best_net = None
+        taus = [initial_tau]
+        for epoch in range(500):
+            taus.append(taus[-1]/(1 + beta*taus[-1]))
         taus.extend([0] * 5)
-        mu, std = run_training(dataset, taus)
-        final_solution.append((mu, std, initial_tau, 1))
+        mus = []
+        stds = []
+        for _ in range(3):
+            mu_sam, std_sam, losses, net = run_training(dataset, taus)
+            mus.append(mu_sam)
+            stds.append(std_sam)
+            if mu_sam > best_mu:
+                best_mu = mu_sam
+                best_net = net
+            final_solution.append((mu_sam, std_sam, initial_tau, beta, losses))
+        mu = np.mean(mus)
+        std = np.mean(stds)
+        torch.save(net, "models/{}_{}it_{}bt_is.pt".format(name, initial_tau, beta))
+        final_solution.append((mu, std, initial_tau, beta, losses))
+        with open("{}.pkl".format(name), "wb") as f:
+            pickle.dump(final_solution, f)
+        all_best_mus.append(best_mu)
+    print(all_best_mus)
 
     # final_solution = []
     # initial_tau = 10
@@ -467,8 +475,7 @@ if __name__ == "__main__":
     # mu, std = run_training(dataset, taus)
     # final_solution.append((mu, std, initial_tau, alpha))
     
-    with open("only_recip_temperature.pkl", "wb") as f:
-        pickle.dump(final_solution, f)
+ 
     
         
     

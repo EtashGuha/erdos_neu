@@ -522,23 +522,14 @@ class clique_MPNN(torch.nn.Module):
         ###calculate loss
         expected_loss = (penalty_coefficient)*expected_distance*0.5 - 0.5*expected_weight_G  
 
-        # loss = expected_loss +  tau * (torch.randn_like(probs) * probs).sum()
-        entropy = (probs * torch.log(torch.clamp(probs, min=1e-7, max=1-1e-7)) + (1 - probs) * torch.log(1 - torch.clamp(probs, min=1e-7, max=1-1e-7))).sum()
-        if isnan(entropy):
-            breakpoint()
-        loss = expected_loss + tau * entropy
+        langeyvin = (torch.randn_like(probs) * probs).sum()
+        # loss = expected_loss +  tau * langeyvin
 
-        if loss < -1e6:
-            print("loss")
-            print(loss)
-            print("expected loss")
-            print(expected_loss)
-            print('entropy')
-            print(entropy)
-            print('tau')
-            print(tau)
-            print('probs')
-            print(probs)
+        # print("Loss: {}, Expected Loss: {}, Langeyvin: {}".format(loss, expected_loss, langeyvin))
+        entropy = (probs * torch.log(torch.clamp(probs, min=1e-7, max=1-1e-7)) + (1 - probs) * torch.log(1 - torch.clamp(probs, min=1e-7, max=1-1e-7))).sum()
+        # if isnan(entropy):
+        #     breakpoint()
+        loss = expected_loss + tau * entropy
 
         retdict = {}
         
