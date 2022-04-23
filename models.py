@@ -5,6 +5,7 @@ from torch.nn import Linear
 from torch import tensor
 from torch.optim import Adam
 from torch.optim import SGD
+import numpy as np
 from math import ceil, isnan
 from torch.nn import Linear
 from torch.distributions import categorical
@@ -31,7 +32,7 @@ from torch_geometric.utils import softmax, add_self_loops, remove_self_loops, se
 from modules_and_utils import get_diracs, get_mask, propagate
 from torch_geometric.nn.norm.graph_size_norm import GraphSizeNorm
 from torch.distributions import Categorical
-
+from modules_and_utils import derandomize_cut, GATAConv, get_diracs, total_var
 ###########
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -102,7 +103,6 @@ class cut_MPNN(torch.nn.Module):
         xinit= x.clone()
         row, col = edge_index
         mask = get_mask(x,edge_index,1).to(x.dtype).unsqueeze(-1)
-
         x = self.conv1(x, edge_index)
         xpostconv1 = x.detach() 
         x = x*mask
