@@ -103,7 +103,7 @@ class cut_MPNN(torch.nn.Module):
         self.lin2.reset_parameters()
 
 
-    def forward(self, data, tvol = None):
+    def forward(self, data, tau=0, tvol = None):
         x = data.x
         edge_index = data.edge_index
         batch = data.batch 
@@ -226,9 +226,13 @@ class cut_MPNN(torch.nn.Module):
         rec_field_volratio = vol_hard/recvol_hard
         total_vol_ratio = vol_hard/totalvol
         
+        entropy = (probs * torch.log(torch.clamp(probs, min=1e-7, max=1-1e-7)) + (1 - probs) * torch.log(1 - torch.clamp(probs, min=1e-7, max=1-1e-7))).sum()
+
+
+
         #calculate loss
         expected_cut = scatter_add(probs*deg, batch, 0) - scatter_add((probs[row]*probs[col]), batch[row], 0)   
-        loss = expected_cut   
+        loss = expected_cut  + tau * entropy 
 
 
         #return dict 
@@ -248,8 +252,8 @@ class cut_MPNN(torch.nn.Module):
         retdict["xinit"] = [xinit,"hist"] #layer input diracs
         retdict["xpostlin1"] = [xpostlin1.mean(1),"hist"] #after first linear layer
         retdict["xprethresh"] = [xprethresh.mean(1),"hist"] #pre thresholding activations 195 x 1
-        retdict["lossvol"] = [lossvol.mean(),"sequence"] #volume constraint
-        retdict["losscard"] = [losscard.mean(),"sequence"] #cardinality constraint
+        # retdict["lossvol"] = [lossvol.mean(),"sequence"] #volume constraint
+        # retdict["losscard"] = [losscard.mean(),"sequence"] #cardinality constraint
         retdict["loss"] = [loss.mean().squeeze(),"sequence"] #final loss
 
         return retdict
@@ -526,7 +530,7 @@ class clique_MPNN(torch.nn.Module):
         expected_weight_G = scatter_add(probs[no_loop_row]*probs[no_loop_col], batch[no_loop_row], 0, dim_size = num_graphs)/2.
         expected_clique_weight = (pairwise_prodsums.unsqueeze(-1) - self_sums)/1.
         expected_distance = (expected_clique_weight - expected_weight_G)        
-        
+
         ###calculate loss
         expected_loss = (penalty_coefficient)*expected_distance*0.5 - 0.5*expected_weight_G  
 
