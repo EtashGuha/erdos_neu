@@ -57,16 +57,11 @@ def total_var(x, edge_index, batch, undirected = True):
 
 
 
-<<<<<<< HEAD
 def get_diracs(data, N , device_name=None, n_diracs = 1,  sparse = False, flat = False, replace = True, receptive_field = 7, effective_volume_range = 0.1, max_iterations=20, complement = False):
     if device_name is not None:
         device = torch.device(device_name if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
-=======
-def get_diracs(data, N , n_diracs = 1,  sparse = False, flat = False, replace = True, receptive_field = 7, effective_volume_range = 0.1, max_iterations=20, complement = False):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
 
     if not sparse:
         graphcount =data.num_nodes #number of graphs in data/batch object
