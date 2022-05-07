@@ -480,14 +480,14 @@ if __name__ == "__main__":
         with open("{}.pkl".format(name), "rb") as f:
             final_solution = pickle.load(f)
     if args.cooling == "linear":
-        initial_taus_betas = [(1e3, -1), (1e4, -1), (5e4, -1), (1e5, -1)]
+        initial_tau_alphas = [(1e3, -1), (1e4, -1), (5e4, -1), (1e5, -1)]
     elif args.cooling == "recip":
-        initial_taus_betas = [(50000, 1e-5), (50000, 3e-5), (50000, 1e-4), (50000, 3e-4)]
+        initial_tau_alphas = [(50000, 1e-5), (50000, 3e-5), (50000, 1e-4), (50000, 3e-4)]
     elif args.cooling == "none":
-        initial_taus_betas = [(0, -1)]
+        initial_tau_alphas = [(0, -1)]
     all_best_mus = []
     for seed in range(2, 8):
-        for initial_tau, beta in initial_taus_betas:
+        for initial_tau, alpha in initial_tau_alphas:
             best_mu = -1
             best_net = None
             taus = [initial_tau]
@@ -495,7 +495,7 @@ if __name__ == "__main__":
                 if args.cooling == "linear" or args.cooling == "none":
                     taus.append(initial_tau * (num_epochs - epoch)/(num_epochs))
                 elif args.cooling == "recip":
-                    taus.append(taus[-1]/(1 + beta * taus[-1]))
+                    taus.append(taus[-1]/(1 + alpha * taus[-1]))
             
             final_val = taus[-1]
             taus = [tau - final_val for tau in taus]
@@ -510,10 +510,10 @@ if __name__ == "__main__":
                 if mu_sam > best_mu:
                     best_mu = mu_sam
                     best_net = net
-                final_solution.append((initial_tau, beta, seed, mu_sam, std_sam,  net, initial_params, final_params,  distances, final_losses))
+                final_solution.append((initial_tau, alpha, seed, mu_sam, std_sam,  net, initial_params, final_params,  distances, final_losses))
             mu = np.mean(mus)
             std = np.mean(stds)
-            torch.save(net, "models/{}_{}it_{}bt_is.pt".format(name, initial_tau, beta))
+            torch.save(net, "models/{}_{}it_{}bt_is.pt".format(name, initial_tau, alpha))
             # final_solution.append((mu, std, initial_tau, beta, losses))
             with open("{}.pkl".format(name), "wb") as f:
                 pickle.dump(final_solution, f)
