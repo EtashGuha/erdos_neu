@@ -146,6 +146,7 @@ def run_training(dataset, taus, seed, beta, device):
 
     # val_losses = []
     # cliq_dists = []
+    np.random(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     net =  clique_MPNN(dataset,numlayers, 32, 32,1)
@@ -301,8 +302,9 @@ def run_training(dataset, taus, seed, beta, device):
     for data in testdata:
         my_graph = to_networkx(Data(x=data.x, edge_index = data.edge_index)).to_undirected()
         print(my_graph)
-        cliqno, _ = solve_gurobi_maxclique(my_graph, 500)
-        data.clique_number = cliqno
+        if "clique_number" not in data.keys():
+            cliqno, _ = solve_gurobi_maxclique(my_graph, 500)
+            data.clique_number = cliqno
         test_data_clique += [data]
 
 
@@ -486,7 +488,7 @@ if __name__ == "__main__":
     elif args.cooling == "none":
         initial_tau_alphas = [(0, -1)]
     all_best_mus = []
-    for seed in range(2, 8):
+    for seed in range(0, 20):
         for initial_tau, alpha in initial_tau_alphas:
             best_mu = -1
             best_net = None
