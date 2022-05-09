@@ -31,12 +31,9 @@ from torch import autograd
 from torch_geometric.utils import softmax, add_self_loops, remove_self_loops, segregate_self_loops, remove_isolated_nodes, contains_isolated_nodes, add_remaining_self_loops
 import gurobipy as gp
 from gurobipy import GRB
-<<<<<<< HEAD
 from torch_geometric.utils import is_undirected
 import numpy as np
 
-=======
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
 ###########
 
 class GATAConv(MessagePassing):

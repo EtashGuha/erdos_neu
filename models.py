@@ -5,10 +5,7 @@ from torch.nn import Linear
 from torch import tensor
 from torch.optim import Adam
 from torch.optim import SGD
-<<<<<<< HEAD
 import numpy as np
-=======
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
 from math import ceil, isnan
 from torch.nn import Linear
 from torch.distributions import categorical
@@ -35,16 +32,11 @@ from torch_geometric.utils import softmax, add_self_loops, remove_self_loops, se
 from modules_and_utils import get_diracs, get_mask, propagate
 from torch_geometric.nn.norm.graph_size_norm import GraphSizeNorm
 from torch.distributions import Categorical
-<<<<<<< HEAD
 from modules_and_utils import derandomize_cut, GATAConv, get_diracs, total_var
-=======
-
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
 ###########
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-<<<<<<< HEAD
 def total_var(x, edge_index, batch, undirected = True):
     row, col = edge_index
     if undirected:
@@ -56,8 +48,6 @@ def total_var(x, edge_index, batch, undirected = True):
     return  tv
 
 
-=======
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
 class cut_MPNN(torch.nn.Module):
     def __init__(self, dataset, num_layers, hidden1, hidden2, deltas, elasticity=0.01, num_iterations = 30):
         super(cut_MPNN, self).__init__()
@@ -89,7 +79,6 @@ class cut_MPNN(torch.nn.Module):
             BN(self.hidden1),
         ),train_eps=False))
      
-<<<<<<< HEAD
         #self.conv2 = GATAConv( self.hidden1, self.hidden2 ,heads=8)
 #         GINConv(Sequential(
 #             Linear(1,  self.hidden1),
@@ -99,20 +88,12 @@ class cut_MPNN(torch.nn.Module):
 #             BN( self.hidden1)
         
         self.lin1 = Linear(self.hidden1, self.hidden1)
-=======
-        self.conv2 = GATAConv( self.hidden1, self.hidden2 ,heads=8)
-        self.lin1 = Linear(8*self.hidden2, self.hidden1)
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
         self.bn2 = BN(self.hidden1)
         self.lin2 = Linear(self.hidden1, 1)
 
     def reset_parameters(self):
         self.conv1.reset_parameters()
-<<<<<<< HEAD
         #self.conv2.reset_parameters() 
-=======
-        self.conv2.reset_parameters() 
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
         for conv in self.convs:
             conv.reset_parameters()    
         for bn in self.bns:
@@ -122,23 +103,14 @@ class cut_MPNN(torch.nn.Module):
         self.lin2.reset_parameters()
 
 
-<<<<<<< HEAD
     def forward(self, data, tau=0, tvol = None):
-=======
-    def forward(self, data, tvol = None):
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
         x = data.x
         edge_index = data.edge_index
         batch = data.batch 
         xinit= x.clone()
         row, col = edge_index
         mask = get_mask(x,edge_index,1).to(x.dtype).unsqueeze(-1)
-<<<<<<< HEAD
         x = self.conv1(x.unsqueeze(-1), edge_index)
-=======
-
-        x = self.conv1(x, edge_index)
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
         xpostconv1 = x.detach() 
         x = x*mask
         for conv, bn in zip(self.convs, self.bns):
@@ -148,7 +120,6 @@ class cut_MPNN(torch.nn.Module):
                 x = x*mask
                 x = bn(x)
 
-<<<<<<< HEAD
       #  breakpoint()
 #         x = self.conv2(x, edge_index)
 #         mask = get_mask(mask,edge_index,1).to(x.dtype)
@@ -160,18 +131,6 @@ class cut_MPNN(torch.nn.Module):
         x = x*mask
         x = self.bn2(x)
         
-=======
-
-        x = self.conv2(x, edge_index)
-        mask = get_mask(mask,edge_index,1).to(x.dtype)
-        x = x*mask
-        xpostconvs = x.detach()
-        #
-        x = F.leaky_relu(self.lin1(x)) 
-        x = x*mask
-        x = self.bn2(x)
-
->>>>>>> 010dbaab108f219025939008c34c932cf086be58
         xpostlin1 = x.detach()
         x = F.dropout(x, p=0.5, training=self.training)
         x = F.leaky_relu(self.lin2(x)) 

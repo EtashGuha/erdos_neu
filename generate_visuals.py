@@ -5,36 +5,48 @@ import numpy as np
 from itertools import product
 import torch
 
-name = "/nethome/eguha3/erdos_neu/recip_300e_rb23_is"
-with open("{}.pkl".format(name), "rb") as f:
+name = "lin_300e_rb23_is.pkl"
+with open("/nethome/eguha3/erdos_neu/{}.pkl".format(name), "rb") as f:
 	final_solution = pickle.load(f)
 
 # final_solution = [ele for ele in final_solution if len(ele) == 6]
 
-initial_tau, beta, seed, mu_sam, std_sam,  net, initial_params, final_params,  distances, final_losses = list(zip(*final_solution))
+initial_tau, alpha, seed, mu_sam, std_sam,  net, initial_params, final_params,  distances, final_losses = list(zip(*final_solution))
 distances = torch.tensor(distances).numpy()
+mu_sam = torch.tensor(mu_sam).numpy()
 seed = np.matrix(seed)
 untaus = np.unique(initial_tau)
-unbetas = np.unique(beta)
+unalphas = np.unique(alpha)
 tau_b_idxs = {}
 
-tau_beta_pairs = list(product(untaus, unbetas))
-for tau_beta_pair in tau_beta_pairs:
-	tau_b_idxs[tau_beta_pair] = []
-for tau_beta_pair in tau_beta_pairs:
+tau_alpha_pairs = list(product(untaus, unalphas))
+for tau_alpha_pair in tau_alpha_pairs:
+	tau_b_idxs[tau_alpha_pair] = []
+for tau_alpha_pair in tau_alpha_pairs:
 	for i in range(distances.shape[0]):
-		if initial_tau[i] == tau_beta_pair[0] and beta[i] == tau_beta_pair[1]:
-			tau_b_idxs[tau_beta_pair].append(i)
+		if initial_tau[i] == tau_alpha_pair[0] and alpha[i] == tau_alpha_pair[1]:
+			tau_b_idxs[tau_alpha_pair].append(i)
 
-
-for tau_beta_pair in tau_beta_pairs:
-	percent_deviation = distances[tau_b_idxs[tau_beta_pair]] 
+all_means = []
+all_distances = []
+for tau_alpha_pair in tau_alpha_pairs:
+	percent_deviation = distances[tau_b_idxs[tau_alpha_pair]] 
 	percent_deviation[percent_deviation == np.inf] = np.nan
+	percent_deviation = abs(percent_deviation)
+	means = mu_sam[tau_b_idxs[tau_alpha_pair]]
+	distancemean = np.nanmean(abs(percent_deviation), axis=1)
+	
+	all_means.extend(list(means))
+	all_distances.extend(list(distancemean))
+	print(seed[:, tau_b_idxs[tau_alpha_pair]])
+	print(tau_alpha_pair)
+	print(distancemean)
 
-	mean = np.nanmean(abs(percent_deviation), axis=1)
-	print(seed[:, tau_b_idxs[tau_beta_pair]])
-	print(tau_beta_pair)
-	print(mean)
+plt.scatter(all_means, all_distances)
+plt.xlabel("means")
+plt.ylabel("distances")
+plt.title(name)
+plt.savefig("/nethome/eguha3/erdos_neu/{}_distanceratio.png".format(name))
 breakpoint()
 all_vals = {}
 
