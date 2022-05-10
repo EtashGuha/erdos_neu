@@ -12,6 +12,7 @@ from torch.optim import Adam
 from torch.optim import SGD
 from math import ceil
 from torch.nn import Linear
+from bp import solve_mvc
 from torch.distributions import categorical
 from torch.distributions import Bernoulli
 import torch.nn
@@ -81,6 +82,7 @@ from hanging_threads import start_monitoring
 # start_monitoring(seconds_frozen=10, test_interval=100)
 # ## Set up data
 
+
 def get_params(model):
     all_weights = []
     for param in model.parameters():
@@ -103,7 +105,7 @@ def calc_distance_params(a_params, b_params):
 
 # In[10]:
 
-def run_training(dataset, taus, seed, beta, device):
+def run_training(dataset, taus, seed, beta, device, num_epochs=150):
         
     dataset_scale = 1
 
@@ -146,7 +148,7 @@ def run_training(dataset, taus, seed, beta, device):
 
     # val_losses = []
     # cliq_dists = []
-    np.random(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     net =  clique_MPNN(dataset,numlayers, 32, 32,1)
@@ -199,7 +201,7 @@ def run_training(dataset, taus, seed, beta, device):
     rand_seeds = [66]
     widths = [64]
 
-    epochs = 150
+    epochs = num_epochs
     net.train()
     retdict = {}
     edge_drop_p = 0.0
@@ -298,13 +300,12 @@ def run_training(dataset, taus, seed, beta, device):
     # In[16]:
 
     test_data_clique = []
-
-    for data in testdata:
+    for data in tqdm(testdata):
         my_graph = to_networkx(Data(x=data.x, edge_index = data.edge_index)).to_undirected()
-        print(my_graph)
-        if "clique_number" not in data.keys():
+        if "clique_number" not in data.keys:
             cliqno, _ = solve_gurobi_maxclique(my_graph, 500)
             data.clique_number = cliqno
+        
         test_data_clique += [data]
 
 
@@ -428,6 +429,25 @@ def run_training(dataset, taus, seed, beta, device):
     print(f"Mean ratio: {(np.array(ratios)).mean()} +/-  {(np.array(ratios)).std()}")
     return (np.array(ratios)).mean(), (np.array(ratios)).std(), losses, net, initial_params, final_params, calc_distance_params(initial_params, final_params), final_losses
 
+def run_bp(dataset):
+    dataset_scale = 1
+    total_samples = int(np.floor(len(dataset)*dataset_scale))
+    dataset = dataset[:total_samples]
+    num_trainpoints = int(np.floor(0.6*len(dataset)))
+    num_valpoints = int(np.floor(num_trainpoints/3))
+    testdata = dataset[num_trainpoints + num_valpoints:]
+
+    bp_ratios = []
+    for data in tqdm(testdata):
+        my_graph = to_networkx(Data(x=data.x, edge_index = data.edge_index)).to_undirected()
+        cliqno, _ = solve_gurobi_maxclique(my_graph, 500)
+        data.clique_number = cliqno
+        breakpoint()
+        mvc_sol, time = solve_mvc(nx.complement(my_graph))
+        final_bpval = my_graph.number_of_nodes() - mvc_sol
+        bp_ratios.append(final_bpval/cliqno)
+    print("BP Mean Ratio: {} BP STD Ratio: {}".format(np.mean(bp_ratios), np.std(bp_ratios)))
+
 def get_data(problem):
 
     datasets = ["TWITTER_SNAP", "COLLAB", "IMDB-BINARY"]
@@ -471,56 +491,61 @@ if __name__ == "__main__":
     parser.add_argument("--device")
     parser.add_argument("--name")
     parser.add_argument("--cooling")
+    parser.add_argument("--run-bp", action='store_true')
     parser.add_argument("--beta", type=int, default=4)
-    args = parser.parse_args()
+    args, leftovers = parser.parse_known_args()
     list_of_taus = []
     dataset = get_data(args.problem)
-    num_epochs = 150
-    name = args.name
-    final_solution = []
-    if os.path.exists("{}.pkl".format(name)):
-        with open("{}.pkl".format(name), "rb") as f:
-            final_solution = pickle.load(f)
-    if args.cooling == "linear":
-        initial_tau_alphas = [(1e3, -1), (1e4, -1), (5e4, -1), (1e5, -1)]
-    elif args.cooling == "recip":
-        initial_tau_alphas = [(50000, 1e-5), (50000, 3e-5), (50000, 1e-4), (50000, 3e-4)]
-    elif args.cooling == "none":
-        initial_tau_alphas = [(0, -1)]
-    all_best_mus = []
-    for seed in range(0, 20):
-        for initial_tau, alpha in initial_tau_alphas:
-            best_mu = -1
-            best_net = None
-            taus = [initial_tau]
-            for epoch in range(num_epochs - 10):
-                if args.cooling == "linear" or args.cooling == "none":
-                    taus.append(initial_tau * (num_epochs - epoch)/(num_epochs))
-                elif args.cooling == "recip":
-                    taus.append(taus[-1]/(1 + alpha * taus[-1]))
-            
-            final_val = taus[-1]
-            taus = [tau - final_val for tau in taus]
-            taus.extend([0] * 10)
 
-            mus = []
-            stds = []
-            for _ in range(1):
-                mu_sam, std_sam, losses, net, initial_params, final_params, distances, final_losses = run_training(dataset, taus, seed, args.beta, args.device)
-                mus.append(mu_sam)
-                stds.append(std_sam)
-                if mu_sam > best_mu:
-                    best_mu = mu_sam
-                    best_net = net
-                final_solution.append((initial_tau, alpha, seed, mu_sam, std_sam,  net, initial_params, final_params,  distances, final_losses))
-            mu = np.mean(mus)
-            std = np.mean(stds)
-            torch.save(net, "models/{}_{}it_{}bt_is.pt".format(name, initial_tau, alpha))
-            # final_solution.append((mu, std, initial_tau, beta, losses))
-            with open("{}.pkl".format(name), "wb") as f:
-                pickle.dump(final_solution, f)
-            all_best_mus.append(best_mu)
-    print(all_best_mus)
+    if args.run_bp:
+        run_bp(dataset)
+    else:
+        num_epochs = 100
+        name = args.name
+        final_solution = []
+        if os.path.exists("{}.pkl".format(name)):
+            with open("{}.pkl".format(name), "rb") as f:
+                final_solution = pickle.load(f)
+        if args.cooling == "linear":
+            initial_tau_alphas = [(1e3, -1), (1e4, -1), (5e4, -1), (1e5, -1)]
+        elif args.cooling == "recip":
+            initial_tau_alphas = [(50000, 1e-5), (50000, 3e-5), (50000, 1e-4), (50000, 3e-4)]
+        elif args.cooling == "none":
+            initial_tau_alphas = [(0, -1)]
+        all_best_mus = []
+        for seed in range(0, 20):
+            for initial_tau, alpha in initial_tau_alphas:
+                best_mu = -1
+                best_net = None
+                taus = [initial_tau]
+                for epoch in range(num_epochs - 10):
+                    if args.cooling == "linear" or args.cooling == "none":
+                        taus.append(initial_tau * (num_epochs - epoch)/(num_epochs))
+                    elif args.cooling == "recip":
+                        taus.append(taus[-1]/(1 + alpha * taus[-1]))
+                
+                final_val = taus[-1]
+                taus = [tau - final_val for tau in taus]
+                taus.extend([0] * 10)
+
+                mus = []
+                stds = []
+                for _ in range(1):
+                    mu_sam, std_sam, losses, net, initial_params, final_params, distances, final_losses = run_training(dataset, taus, seed, args.beta, args.device, num_epochs=num_epochs)
+                    mus.append(mu_sam)
+                    stds.append(std_sam)
+                    if mu_sam > best_mu:
+                        best_mu = mu_sam
+                        best_net = net
+                    final_solution.append((initial_tau, alpha, seed, mu_sam, std_sam,  net, initial_params, final_params,  distances, final_losses))
+                mu = np.mean(mus)
+                std = np.mean(stds)
+                torch.save(net, "models/{}_{}it_{}bt_is.pt".format(name, initial_tau, alpha))
+                # final_solution.append((mu, std, initial_tau, beta, losses))
+                with open("{}.pkl".format(name), "wb") as f:
+                    pickle.dump(final_solution, f)
+                all_best_mus.append(best_mu)
+        print(all_best_mus)
 
     # final_solution = []
     # initial_tau = 10
